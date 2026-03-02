@@ -272,7 +272,7 @@ app.post('/admin/delete-code', (req, res) => {
   res.json({ success: true });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 OXOKE Downloader Server v1.0.0 running on port ${PORT}`);
   console.log(`✅ Admin key: ${ADMIN_KEY}`);
   console.log(`✅ Endpoints: /api/get-trial, /api/activate, /api/verify`);
