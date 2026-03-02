@@ -278,3 +278,67 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Endpoints: /api/get-trial, /api/activate, /api/verify`);
   console.log(`✅ Admin: /admin/codes, /admin/add-code, /admin/reset-code`);
 });
+
+
+// ============================================================
+// POST /api/youtube-download
+// Extension এর পক্ষে Cobalt API call করে URL return করে
+// (Extension থেকে সরাসরি call করলে Cloudflare block করে)
+// ============================================================
+const COBALT_INSTANCES = [
+  'https://api.cobalt.tools/',
+  'https://co.wuk.sh/',
+  'https://cobalt.api.timelessnesses.me/'
+];
+
+app.post('/api/youtube-download', async (req, res) => {
+  const { videoId, quality, audioOnly, audioFormat } = req.body;
+  if (!videoId) return res.status(400).json({ success: false, error: 'Missing videoId' });
+
+  const ytUrl = 'https://www.youtube.com/watch?v=' + videoId;
+  const body = {
+    url: ytUrl,
+    videoQuality: quality || '720',
+    downloadMode: audioOnly ? 'audio' : 'auto',
+    filenameStyle: 'pretty',
+    youtubeVideoCodec: 'h264',
+    alwaysProxy: false
+  };
+  if (audioOnly && audioFormat) body.audioFormat = audioFormat;
+
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      const cobaltRes = await fetch(instance, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000)
+      });
+
+      const ct = cobaltRes.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) continue;
+      if (!cobaltRes.ok) continue;
+
+      const data = await cobaltRes.json();
+
+      if ((data.status === 'tunnel' || data.status === 'stream' || data.status === 'redirect') && data.url) {
+        return res.json({ success: true, url: data.url, filename: data.filename || '' });
+      }
+      if (data.status === 'picker' && Array.isArray(data.picker) && data.picker.length > 0) {
+        const best = data.picker.find(p => p.url) || data.picker[0];
+        if (best && best.url) return res.json({ success: true, url: best.url, filename: data.filename || '' });
+      }
+      if (data.status === 'error') {
+        return res.json({ success: false, error: data.error?.code || 'cobalt_error' });
+      }
+    } catch(e) {
+      continue;
+    }
+  }
+
+  return res.json({ success: false, error: 'All download services failed' });
+});
